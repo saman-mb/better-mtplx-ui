@@ -13,7 +13,11 @@ launch as many as you like, each on its own port, and watch them side by side.
   models serve simultaneously, and the GUI shows both alive at once.
 - **Memory is the scarce resource.** Unified memory is shared by GPU and CPU.
   The GUI shows a live gauge per instance and a machine-wide bar, so you can
-  see what a load will cost before you commit to it.
+  see what a load will cost before you commit to it. The weight figure comes
+  from the engine's own memory plan, not an estimate.
+- **It sees servers you did not start.** An MTPLX server left running by the
+  MTPLX desktop app or by a terminal shows up in the same grid, flagged as
+  *external*, with its own endpoint and footprint.
 - **Lightweight.** Tauri + Rust uses the system WebView. No bundled Chromium,
   no bundled inference runtime — the GUI talks to the `mtplx` CLI you already
   have.
@@ -49,13 +53,30 @@ The Rust test-suite drives a stub `mtplx` binary, so it verifies real process
 spawning, parallel port binding, log capture and shutdown without loading a
 model.
 
+Four runnable examples check the same paths against the real engine:
+
+```bash
+cd src-tauri
+cargo run --example launch          # start one real instance, verify, stop
+cargo run --example parallel         # start two, serve both concurrently
+cargo run --example discover         # list MTPLX servers on the loopback
+cargo run --example memprobe -- 8000 # explain a memory attribution
+```
+
+## Develop the UI without the Rust side
+
+`npm run dev`, then open `/mock.html`. That entry mocks the Tauri IPC bridge
+with representative data, so the interface can be iterated on (and
+screenshotted) in a plain browser. It is a dev-only entry — `vite build`
+builds `index.html`, so none of it reaches the shipped bundle.
+
 ## Architecture
 
 | Layer | Where | Responsibility |
 |---|---|---|
 | Engine bridge | `src-tauri/src/mtplx/` | Resolve and invoke the `mtplx` CLI; parse its JSON payloads |
 | Orchestrator | `src-tauri/src/instances/` | Spawn, supervise and stop `mtplx serve` processes |
-| System probe | `src-tauri/src/system/` | Unified memory and per-process-tree memory attribution |
+| System probe | `src-tauri/src/system/` | Unified memory, process-tree and socket-owner attribution |
 | Settings | `src-tauri/src/settings/` | Persisted preferences in the app config directory |
 | UI | `src/` | React views: Instances, Library, Settings |
 
@@ -65,7 +86,8 @@ it renders a single `instances://tick` event the backend emits once a second.
 ## Views
 
 - **Instances** — the instance grid. One card per running model, showing its
-  port, status, live memory and throughput, with per-instance logs.
+  port, status, weight footprint, resident memory and throughput, with
+  per-instance logs. Servers started elsewhere appear as *external*.
 - **Library** — installed packs (ready to run) and the Hugging Face catalog of
   MTPLX-branded models (one click to download).
 - **Settings** — default port, serving profile, scheduler mode, context

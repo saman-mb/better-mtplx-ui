@@ -8,6 +8,7 @@ import {
   getSettings,
   pullModel,
   startInstance,
+  stopExternalServer,
   stopInstance,
   suggestPort,
 } from "./lib/ipc";
@@ -60,6 +61,15 @@ export default function App() {
     }
   };
 
+  const stopExternal = async (port: number) => {
+    try {
+      await stopExternalServer(port);
+      flash("info", `Stopped the server on port ${port}.`);
+    } catch (err) {
+      flash("error", String(err));
+    }
+  };
+
   const pull = async (repo: string) => {
     setDownloading((prev) => new Set(prev).add(repo));
     try {
@@ -85,7 +95,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-ink-900">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-850">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-ink-800 bg-ink-850">
         <div className="px-5 pb-4 pt-5">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500 text-sm font-bold text-ink-950">
@@ -148,8 +158,10 @@ export default function App() {
         {view === "instances" && (
           <InstanceGrid
             instances={tick.instances}
+            external={tick.external}
             totalMemoryBytes={tick.memory.totalBytes}
             onStop={(id) => void stop(id)}
+            onStopExternal={(port) => void stopExternal(port)}
             busy={busy}
             onOpenLibrary={() => setView("library")}
           />

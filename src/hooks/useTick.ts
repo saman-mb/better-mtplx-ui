@@ -10,6 +10,7 @@ const EMPTY: TickPayload = {
     usedBytes: 0,
     usedRatio: 0,
   },
+  external: [],
 };
 
 /**
@@ -26,7 +27,14 @@ export function useTick(): TickPayload {
     let cancelled = false;
 
     listen<TickPayload>("instances://tick", (event) => {
-      if (!cancelled) setTick(event.payload);
+      if (cancelled) return;
+      // Tolerate a payload from an older backend (e.g. during a hot reload)
+      // that does not carry every field yet.
+      setTick({
+        instances: event.payload.instances ?? [],
+        memory: event.payload.memory ?? EMPTY.memory,
+        external: event.payload.external ?? [],
+      });
     })
       .then((fn) => {
         if (cancelled) fn();

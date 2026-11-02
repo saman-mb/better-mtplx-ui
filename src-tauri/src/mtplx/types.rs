@@ -13,6 +13,8 @@ pub struct ModelPack {
     #[serde(default)]
     pub size_gb: Option<f64>,
     #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
     pub is_primary: bool,
     #[serde(default)]
     pub has_runtime_contract: bool,

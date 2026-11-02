@@ -1,10 +1,13 @@
-import type { InstanceView } from "../lib/types";
+import type { ExternalServer, InstanceView } from "../lib/types";
+import { ExternalServerCard } from "./ExternalServerCard";
 import { InstanceCard } from "./InstanceCard";
 
 interface Props {
   instances: InstanceView[];
+  external: ExternalServer[];
   totalMemoryBytes: number;
   onStop: (id: string) => void;
+  onStopExternal: (port: number) => void;
   busy: boolean;
   onOpenLibrary: () => void;
 }
@@ -17,8 +20,10 @@ interface Props {
  */
 export function InstanceGrid({
   instances,
+  external,
   totalMemoryBytes,
   onStop,
+  onStopExternal,
   busy,
   onOpenLibrary,
 }: Props) {
@@ -26,7 +31,14 @@ export function InstanceGrid({
     ["starting", "loading", "ready", "stopping"].includes(instance.status),
   );
 
-  if (instances.length === 0) {
+  // A server we started and then found externally is the same process —
+  // never show it twice.
+  const managedPorts = new Set(instances.map((instance) => instance.port));
+  const foreignServers = external.filter(
+    (server) => !managedPorts.has(server.port),
+  );
+
+  if (instances.length === 0 && foreignServers.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-ink-800 text-xl">
@@ -54,7 +66,10 @@ export function InstanceGrid({
       <div className="mb-4 flex items-baseline gap-3">
         <h1 className="text-sm font-semibold text-slate-100">Running</h1>
         <span className="text-xs text-slate-500">
-          {live.length} live · {instances.length - live.length} stopped
+          {live.length} managed
+          {foreignServers.length > 0 && ` · ${foreignServers.length} external`}
+          {instances.length - live.length > 0 &&
+            ` · ${instances.length - live.length} stopped`}
         </span>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
@@ -64,6 +79,14 @@ export function InstanceGrid({
             instance={instance}
             totalMemoryBytes={totalMemoryBytes}
             onStop={onStop}
+            busy={busy}
+          />
+        ))}
+        {foreignServers.map((server) => (
+          <ExternalServerCard
+            key={`external-${server.port}`}
+            server={server}
+            onStop={onStopExternal}
             busy={busy}
           />
         ))}

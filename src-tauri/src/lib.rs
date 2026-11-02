@@ -21,6 +21,12 @@ use mtplx::types::{DiscoverCard, InspectResult, ModelsPayload, StatusPayload};
 /// Event carrying the full instance + memory state, emitted once per second.
 pub const TICK_EVENT: &str = "instances://tick";
 
+/// Ports probed for MTPLX servers this app did not start.
+const DISCOVERY_RANGE: std::ops::RangeInclusive<u16> = 8000..=8015;
+
+/// How many ticks between discovery scans.
+const DISCOVERY_EVERY_TICKS: u64 = 5;
+
 /// Shared application state.
 pub struct AppState {
     pub manager: Arc<InstanceManager>,
@@ -33,6 +39,8 @@ pub struct AppState {
 pub struct TickPayload {
     pub instances: Vec<InstanceView>,
     pub memory: MemorySnapshot,
+    /// MTPLX servers running on this Mac that this app did not start.
+    pub external: Vec<instances::ExternalServer>,
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +106,43 @@ async fn start_instance(
 #[tauri::command]
 async fn stop_instance(manager: State<'_, Arc<InstanceManager>>, id: String) -> Result<(), String> {
     manager.stop(&id).await.map_err(|e| e.to_string())
+}
+
+/// Stop an MTPLX server this app did not start, by port.
+#[tauri::command]
+async fn stop_external_server(port: u16) -> Result<(), String> {
+    let port_arg = port.to_string();
+    cli::run(&["stop", "--port", &port_arg])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Scan the loopback interface for MTPLX servers this app did not start.
+#[tauri::command]
+async fn discover_servers() -> Result<Vec<instances::ExternalServer>, String> {
+    let ports: Vec<u16> = DISCOVERY_RANGE.collect();
+    let packs = cached_pack_sizes().await;
+    Ok(instances::discovery::scan(&ports, &packs).await)
+}
+
+/// Sizes of the cached packs, used to resolve an external server's footprint.
+async fn cached_pack_sizes() -> Vec<instances::discovery::PackSize> {
+    cli::list_models()
+        .await
+        .map(|payload| {
+            payload
+                .models
+                .iter()
+                .map(|model| instances::discovery::PackSize {
+                    repo_id: model.repo_id.clone(),
+                    size_bytes: model.size_bytes.unwrap_or_else(|| {
+                        (model.size_gb.unwrap_or(0.0) * 1024.0 * 1024.0 * 1024.0) as u64
+                    }),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Current view of every instance.
@@ -171,11 +216,24 @@ pub fn run() {
             let tick_handle = app.handle().clone();
             let tick_manager = Arc::clone(&manager);
             tauri::async_runtime::spawn(async move {
+                let mut tick_count: u64 = 0;
+                let mut external: Vec<instances::ExternalServer> = Vec::new();
                 loop {
                     tick_manager.refresh().await;
+                    tick_count += 1;
+
+                    // Scanning the port range is the only outbound work, so it
+                    // runs less often than the local supervision pass.
+                    if tick_count % DISCOVERY_EVERY_TICKS == 1 {
+                        let ports: Vec<u16> = DISCOVERY_RANGE.collect();
+                        let packs = cached_pack_sizes().await;
+                        external = instances::discovery::scan(&ports, &packs).await;
+                    }
+
                     let payload = TickPayload {
                         instances: tick_manager.views(),
                         memory: tick_manager.memory_snapshot(),
+                        external: external.clone(),
                     };
                     let _ = tick_handle.emit(TICK_EVENT, payload);
                     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -203,6 +261,8 @@ pub fn run() {
             discover_models,
             start_instance,
             stop_instance,
+            stop_external_server,
+            discover_servers,
             list_instances,
             memory_snapshot,
             suggest_port,

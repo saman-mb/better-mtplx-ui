@@ -76,9 +76,15 @@ export function InstanceCard({
 
       <div className="mt-4">
         <MemoryBarInline
-          usedBytes={instance.memoryBytes}
+          usedBytes={instance.weightsBytes ?? instance.memoryBytes}
           totalBytes={totalMemoryBytes}
         />
+        {instance.weightsBytes !== null && (
+          <p className="mt-1 text-[10px] text-slate-500">
+            {formatBytes(instance.weightsBytes)} weights ·{" "}
+            {formatBytes(instance.memoryBytes)} resident
+          </p>
+        )}
       </div>
 
       {instance.error && (

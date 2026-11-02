@@ -35,6 +35,7 @@ impl InstanceStatus {
 
 /// A single running (or recently stopped) model instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstanceView {
     /// Stable identifier, also used as the Tauri event payload key.
     pub id: String,
@@ -46,6 +47,12 @@ pub struct InstanceView {
     pub status: InstanceStatus,
     /// Resident memory of the instance's process tree, in bytes.
     pub memory_bytes: u64,
+    /// Weight footprint the engine reports it mapped into unified memory.
+    ///
+    /// This is the number that decides whether the model fits alongside the
+    /// others, and it is larger than the resident set for memory-mapped
+    /// weights that have not been paged in yet.
+    pub weights_bytes: Option<u64>,
     /// Number of tokens per second reported by the engine, when known.
     pub tokens_per_second: Option<f64>,
     /// Last error message, if the instance failed.
@@ -58,6 +65,7 @@ pub struct InstanceView {
 
 /// Snapshot of machine memory, used for the memory gauge and pre-flight checks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemorySnapshot {
     /// Physical (unified) memory installed, in bytes.
     pub total_bytes: u64,

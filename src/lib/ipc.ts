@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   DiscoverCard,
+  ExternalServer,
   InspectResult,
   InstanceView,
   MemorySnapshot,
@@ -37,6 +38,14 @@ export const startInstance = (
 /** Stop a model instance. */
 export const stopInstance = (id: string) =>
   invoke<void>("stop_instance", { id });
+
+/** Stop an MTPLX server this app did not start, by port. */
+export const stopExternalServer = (port: number) =>
+  invoke<void>("stop_external_server", { port });
+
+/** Scan for MTPLX servers this app did not start. */
+export const discoverServers = () =>
+  invoke<ExternalServer[]>("discover_servers");
 
 /** Current view of every instance. */
 export const listInstances = () => invoke<InstanceView[]>("list_instances");

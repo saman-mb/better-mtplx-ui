@@ -9,6 +9,7 @@ export interface InstanceView {
   port: number;
   status: InstanceStatus;
   memoryBytes: number;
+  weightsBytes: number | null;
   tokensPerSecond: number | null;
   error: string | null;
   logs: string[];
@@ -22,9 +23,18 @@ export interface MemorySnapshot {
   usedRatio: number;
 }
 
+export interface ExternalServer {
+  port: number;
+  modelId: string;
+  contextLength: number | null;
+  memoryBytes: number;
+  weightsBytes: number | null;
+}
+
 export interface TickPayload {
   instances: InstanceView[];
   memory: MemorySnapshot;
+  external: ExternalServer[];
 }
 
 export interface PackValidation {

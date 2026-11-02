@@ -32,6 +32,8 @@ struct ManagedInstance {
     logs: VecDeque<String>,
     started_at: Option<u64>,
     tokens_per_second: Option<f64>,
+    /// Weight footprint the engine reports it mapped into unified memory.
+    weights_bytes: Option<u64>,
 }
 
 impl ManagedInstance {
@@ -42,6 +44,7 @@ impl ManagedInstance {
             port: self.port,
             status: self.status,
             memory_bytes,
+            weights_bytes: self.weights_bytes,
             tokens_per_second: self.tokens_per_second,
             error: self.error.clone(),
             logs: self.logs.iter().cloned().collect(),
@@ -80,14 +83,19 @@ impl InstanceManager {
         let mut views: Vec<InstanceView> = instances
             .values()
             .map(|instance| {
-                // The engine may be a descendant (or a re-parented orphan), so
-                // take the larger of the tree total and the port-matched total.
+                // The engine is the process we spawned, so the tree walk is
+                // exact. The socket lookup is the fallback for a server that
+                // has been re-parented away from us.
                 let tree = instance
                     .pid
                     .map(|pid| memory::process_tree_memory(&mut sys, pid))
                     .unwrap_or(0);
-                let by_port = memory::processes_serving_port(&mut sys, instance.port);
-                instance.to_view(tree.max(by_port))
+                let by_port = if tree == 0 {
+                    memory::memory_for_port(&mut sys, instance.port)
+                } else {
+                    tree
+                };
+                instance.to_view(by_port)
             })
             .collect();
         views.sort_by_key(|view| view.started_at.unwrap_or(0));
@@ -184,6 +192,7 @@ impl InstanceManager {
             logs: VecDeque::new(),
             started_at: Some(unix_now()),
             tokens_per_second: None,
+            weights_bytes: None,
         };
         self.instances.lock().insert(id.clone(), instance);
 
@@ -245,6 +254,11 @@ impl InstanceManager {
         // Track a throughput figure if the engine reports one.
         if let Some(tps) = parse_tokens_per_second(&line) {
             instance.tokens_per_second = Some(tps);
+        }
+        // The engine prints its own memory plan; its weight figure is the
+        // authoritative answer to "will this model fit".
+        if let Some(weights) = parse_weights_bytes(&line) {
+            instance.weights_bytes = Some(weights);
         }
         if instance.logs.len() >= LOG_CAPACITY {
             instance.logs.pop_front();
@@ -344,6 +358,41 @@ fn parse_tokens_per_second(line: &str) -> Option<f64> {
         .collect();
     let value: f64 = digits.chars().rev().collect::<String>().parse().ok()?;
     if value > 0.0 { Some(value) } else { None }
+}
+
+/// Extract the weight footprint from an engine memory-plan line.
+///
+/// The engine prints a line like:
+/// `Memory plan: 256G Mac: engine budget 192.0G, weights 77.3G, context 262144, ...`
+pub fn parse_weights_bytes(line: &str) -> Option<u64> {
+    let marker = line.find("weights ")?;
+    let rest = &line[marker + "weights ".len()..];
+    let token: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == 'G' || *c == 'i' || *c == 'B')
+        .collect();
+    parse_size_token(&token)
+}
+
+/// Parse a size token like `77.3G`, `77.3GiB` or `512M` into bytes.
+pub fn parse_size_token(token: &str) -> Option<u64> {
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let split = token
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(token.len());
+    let (number, unit) = token.split_at(split);
+    let value: f64 = number.parse().ok()?;
+    let factor: f64 = match unit.trim().to_ascii_lowercase().as_str() {
+        "g" | "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        "m" | "mb" | "mib" => 1024.0 * 1024.0,
+        "k" | "kb" | "kib" => 1024.0,
+        "" => 1.0,
+        _ => return None,
+    };
+    Some((value * factor) as u64)
 }
 
 /// Current Unix timestamp in seconds.

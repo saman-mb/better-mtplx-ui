@@ -1,6 +1,17 @@
 //! Machine memory introspection via `sysinfo`.
+//!
+//! Two attribution strategies are needed on macOS:
+//!
+//! * **Process tree** — for servers this app started. `mtplx serve` execs into
+//!   the engine process, so the child we spawned *is* the server and the tree
+//!   walk gives the exact footprint.
+//! * **Listening socket** — for servers this app did not start. `sysinfo` cannot
+//!   read the command line of an interpreter whose path contains spaces (the
+//!   MTPLX runtime venv), so matching on argv is unreliable. `lsof` reports the
+//!   owning pid directly, which always works.
 
 use std::collections::HashSet;
+use std::process::Command;
 
 use sysinfo::{MemoryRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -37,9 +48,6 @@ pub fn snapshot(sys: &mut System) -> MemorySnapshot {
 }
 
 /// Sum resident memory across `pid` and all of its descendants.
-///
-/// The MLX engine may run as a grandchild of the `mtplx serve` process, so
-/// attributing memory to the direct child alone would badly under-report.
 pub fn process_tree_memory(sys: &mut System, pid: u32) -> u64 {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -69,33 +77,30 @@ pub fn process_tree_memory(sys: &mut System, pid: u32) -> u64 {
     total
 }
 
-/// Sum resident memory of every process that advertises `port` on its command
-/// line.
+/// Pids listening on a loopback TCP port.
 ///
-/// A server process that gets re-parented to `launchd` is no longer reachable
-/// through the process tree, but its command line still carries the port.
-pub fn processes_serving_port(sys: &mut System, port: u16) -> u64 {
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_memory(),
-    );
+/// Uses `lsof`, which reports socket ownership reliably regardless of how the
+/// owning process was launched.
+pub fn pids_listening_on(port: u16) -> Vec<u32> {
+    let output = Command::new("/usr/sbin/lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output();
 
-    let needle = format!(":{port}");
-    let port_flag = format!("--port={port}");
-    let mut total = 0u64;
+    let Ok(output) = output else {
+        return Vec::new();
+    };
 
-    for process in sys.processes().values() {
-        let cmd = process.cmd();
-        let joined: Vec<String> = cmd
-            .iter()
-            .map(|part| part.to_string_lossy().to_string())
-            .collect();
-        let line = joined.join(" ");
-        if line.contains(&needle) || line.contains(&port_flag) {
-            total = total.saturating_add(process.memory());
-        }
-    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
+}
 
-    total
+/// Resident memory held by whatever is listening on `port`.
+pub fn memory_for_port(sys: &mut System, port: u16) -> u64 {
+    pids_listening_on(port)
+        .into_iter()
+        .map(|pid| process_tree_memory(sys, pid))
+        .max()
+        .unwrap_or(0)
 }

@@ -27,9 +27,9 @@ export function MemoryBar({ usedBytes, totalBytes, label, compact }: Props) {
   return (
     <div className="w-full">
       {label && (
-        <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
-          <span>{label}</span>
-          <span className="font-mono text-slate-300">
+        <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px] text-slate-400">
+          <span className="shrink-0">{label}</span>
+          <span className="truncate font-mono text-[10px] text-slate-300">
             {compact
               ? formatPercent(ratio)
               : `${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`}

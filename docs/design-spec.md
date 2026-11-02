@@ -45,3 +45,35 @@ A grid of "Instance Cards." Each card represents a running model on a specific p
         - `InstanceGrid`
             - `InstanceCard`
         - `SettingsView`
+
+
+## 6. Memory attribution
+
+Unified memory is the binding constraint, so the numbers shown must be the
+real ones.
+
+| Number | Source | Why |
+|---|---|---|
+| **Weights** | The engine's own `Memory plan` log line (`weights 77.3G`) | The authoritative unified-memory cost of the model. |
+| **Resident** | `sysinfo` process-tree RSS | What is actually paged in right now. Lower than the weights for memory-mapped packs. |
+| **Available** | `sysinfo` machine memory | Drives the sidebar gauge. |
+
+External servers (started outside this app) expose no log, so their weight
+figure is resolved from the local model cache by matching the server's short
+model id against the cached repo ids.
+
+`sysinfo` cannot read the command line of an interpreter whose path contains
+spaces — which is exactly the MTPLX runtime venv — so socket ownership is
+resolved with `lsof` instead of argv matching.
+
+## 7. External servers
+
+The grid shows two kinds of card:
+
+- **Managed** — started by this app. Solid border, full controls, live logs.
+- **External** — already running on the machine. Dashed border, endpoint and
+  footprint only, plus a *Stop server* action that goes through
+  `mtplx stop --port`.
+
+Ports 8000-8015 are scanned every five ticks. Probes run concurrently and
+only a successful `GET /v1/models` counts as a hit.

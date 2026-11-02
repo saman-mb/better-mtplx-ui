@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Better MTPLX UI — browser preview</title>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <!--
+      Browser preview harness.
+
+      Mocks the Tauri IPC bridge with representative data so the UI can be
+      developed and screenshotted in a plain browser, without building the
+      Rust side. `npm run dev` then open /mock.html.
+
+      This file is a dev entry only: `vite build` builds index.html, so none
+      of this reaches the shipped bundle.
+    -->
+    <script src="/dev/tauri-mock.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
